@@ -4,7 +4,7 @@ from PyPDF2 import PdfReader
 import base64
 import os
 from dotenv import load_dotenv
-from audiorecorder import audiorecorder   # 👈 NEW
+import streanlit-audiorecorder as recorder  # 👈 NEW
 
 # ---------------- SETUP ----------------
 load_dotenv()  # loads .env file if exists
@@ -112,3 +112,4 @@ with tab3:
             st.success(transcript)
         else:
             st.warning("Please record or upload an audio file first.")
+
