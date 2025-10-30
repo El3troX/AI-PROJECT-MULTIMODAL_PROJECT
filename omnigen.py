@@ -3,8 +3,9 @@ import google.generativeai as genai
 from PyPDF2 import PdfReader
 import base64
 import os
+import io
 from dotenv import load_dotenv
-from audiorecorder import audiorecorder   # 👈 NEW
+from audiorecorder import audiorecorder  # 👈 audio recorder
 
 # ---------------- SETUP ----------------
 load_dotenv()  # loads .env file if exists
@@ -82,7 +83,7 @@ with tab2:
 with tab3:
     st.header("🎙️ Speech to English Translator (Gemini)")
 
-    # 👇 NEW: Let user choose between record or upload
+    # 👇 User chooses between recording or upload
     mode = st.radio("Select Input Method:", ["🎙️ Record from Mic", "📁 Upload File"])
 
     audio_file = None
@@ -92,9 +93,15 @@ with tab3:
         audio = audiorecorder("🎤 Start Recording", "🔴 Recording... Click again to stop")
 
         if len(audio) > 0:
-            st.audio(audio.tobytes(), format="audio/wav")
+            # Convert AudioSegment to bytes
+            buffer = io.BytesIO()
+            audio.export(buffer, format="wav")
+            audio_bytes = buffer.getvalue()
+
+            # Play and save
+            st.audio(audio_bytes, format="audio/wav")
             with open("temp_audio.wav", "wb") as f:
-                f.write(audio.tobytes())
+                f.write(audio_bytes)
             audio_file = open("temp_audio.wav", "rb")
             st.success("✅ Audio recorded successfully!")
 
@@ -112,5 +119,3 @@ with tab3:
             st.success(transcript)
         else:
             st.warning("Please record or upload an audio file first.")
-
-
