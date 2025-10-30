@@ -3,9 +3,7 @@ import google.generativeai as genai
 from PyPDF2 import PdfReader
 import base64
 import os
-import io
 from dotenv import load_dotenv
-from audiorecorder import audiorecorder  # 👈 audio recorder
 
 # ---------------- SETUP ----------------
 load_dotenv()  # loads .env file if exists
@@ -24,7 +22,7 @@ def gemini_generate(prompt, file=None):
         parts = [{"text": prompt}]
         if file:
             file_bytes = file.read()
-            mime_type = getattr(file, "type", "application/octet-stream")
+            mime_type = file.type or "application/octet-stream"
             encoded = base64.b64encode(file_bytes).decode("utf-8")
             parts.append({
                 "inline_data": {
@@ -82,40 +80,13 @@ with tab2:
 # ---------------------------------------------------------------------------
 with tab3:
     st.header("🎙️ Speech to English Translator (Gemini)")
+    audio = st.file_uploader("Upload an audio file", type=["mp3", "wav", "m4a"])
 
-    # 👇 User chooses between recording or upload
-    mode = st.radio("Select Input Method:", ["🎙️ Record from Mic", "📁 Upload File"])
-
-    audio_file = None
-
-    if mode == "🎙️ Record from Mic":
-        st.write("Click below to record audio:")
-        audio = audiorecorder("🎤 Start Recording", "🔴 Recording... Click again to stop")
-
-        if len(audio) > 0:
-            # Convert AudioSegment to bytes
-            buffer = io.BytesIO()
-            audio.export(buffer, format="wav")
-            audio_bytes = buffer.getvalue()
-
-            # Play and save
-            st.audio(audio_bytes, format="audio/wav")
-            with open("temp_audio.wav", "wb") as f:
-                f.write(audio_bytes)
-            audio_file = open("temp_audio.wav", "rb")
-            st.success("✅ Audio recorded successfully!")
-
-    else:
-        uploaded = st.file_uploader("Upload an audio file", type=["mp3", "wav", "m4a"])
-        if uploaded:
-            audio_file = uploaded
-
-    # Process the audio
     if st.button("Transcribe & Translate", key="audio_btn"):
-        if audio_file:
+        if audio:
             prompt = "Transcribe and translate this audio into clear English text."
             with st.spinner("Processing audio..."):
-                transcript = gemini_generate(prompt, file=audio_file)
+                transcript = gemini_generate(prompt, file=audio)
             st.success(transcript)
         else:
-            st.warning("Please record or upload an audio file first.")
+            st.warning("Please upload an audio file first.")
