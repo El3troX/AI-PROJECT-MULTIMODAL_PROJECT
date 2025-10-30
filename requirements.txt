@@ -3,5 +3,4 @@ streamlit
 google-generativeai
 python-dotenv
 PyPDF2
-pyaudioop
 
