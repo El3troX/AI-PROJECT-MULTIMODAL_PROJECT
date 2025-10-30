@@ -1,6 +1,7 @@
-streamlit-audiorecorder
 streamlit
 google-generativeai
 python-dotenv
 PyPDF2
-
+pydub
+streamlit-audiorecorder
+ffmpeg-python
