@@ -1,22 +1,3 @@
-import sys
-import types
-
-# Temporary patch for Python 3.13 where audioop was removed
-if 'audioop' not in sys.modules:
-    fake_audioop = types.ModuleType("audioop")
-    def _stub(*args, **kwargs):
-        raise NotImplementedError("audioop removed in Python 3.13; please downgrade to 3.12.")
-    for fn in ["add", "mul", "bias", "adpcm2lin", "lin2adpcm", "avg", "avgpp", "cross", "findfactor",
-               "findfit", "findmax", "getsample", "max", "maxpp", "minmax", "reverse", "rms", "tomono",
-               "tostereo", "ulaw2lin", "lin2ulaw"]:
-        setattr(fake_audioop, fn, _stub)
-    sys.modules['audioop'] = fake_audioop
-
-# Now safe to import pydub/audiorecorder
-from audiorecorder import audiorecorder
-
-
-
 import streamlit as st
 import google.generativeai as genai
 from PyPDF2 import PdfReader
@@ -131,4 +112,5 @@ with tab3:
             st.success(transcript)
         else:
             st.warning("Please record or upload an audio file first.")
+
 
