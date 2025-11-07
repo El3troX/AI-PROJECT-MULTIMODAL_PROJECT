@@ -67,7 +67,7 @@ with tab2:
 
     if st.button("Generate Caption", key="img_btn"):
         if img:
-            prompt = "Describe this image in a creative short caption or story."
+            prompt = "Describe this image descriptively."
             with st.spinner("Analyzing image..."):
                 caption = gemini_generate(prompt, file=img)
             st.image(img, use_column_width=True)
@@ -90,3 +90,4 @@ with tab3:
             st.success(transcript)
         else:
             st.warning("Please upload an audio file first.")
+
