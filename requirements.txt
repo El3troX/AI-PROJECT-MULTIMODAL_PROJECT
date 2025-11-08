@@ -1,13 +1,19 @@
+# --- Core UI Framework ---
+streamlit==1.34.0
+streamlit-drawable-canvas==0.9.3
+
+# --- Environment & API Keys ---
 python-dotenv==1.0.1
-streamlit==1.24.0
+
+# --- Google Gemini API ---
 google-generativeai==0.7.2
+
+# --- File & Media Handling ---
 PyPDF2==3.0.1
-
-# IMPORTANT: old Pillow required for Streamlit 1.24 + drawable canvas
-Pillow==9.5.0
-
-# IMPORTANT: old numpy required for Streamlit 1.24
+Pillow==10.3.0
 numpy==1.26.4
 
-streamlit-drawable-canvas==0.9.3
-pydub==0.25.1
+# --- Utilities ---
+protobuf==5.27.2
+requests==2.32.3
+tqdm==4.66.5
