@@ -1,4 +1,8 @@
+python-dotenv
 streamlit
 google-generativeai
-python-dotenv
 PyPDF2
+pillow
+numpy
+opencv-python
+streamlit-drawable-canvas
