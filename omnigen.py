@@ -10,7 +10,6 @@ import google.generativeai as genai
 from PyPDF2 import PdfReader
 from PIL import Image
 import numpy as np
-import cv2
 from streamlit_drawable_canvas import st_canvas
 
 # ---------------------------------------------------------------------------
@@ -68,14 +67,59 @@ def extract_pdf_text(pdf_bytes: bytes) -> str:
     except Exception as e:
         return f"[PDF read error: {e}]"
 
-def inpaint_with_mask(image_pil: Image.Image, mask_pil: Image.Image) -> Image.Image:
-    """CPU inpainting using OpenCV's Telea algorithm."""
-    img = np.array(image_pil.convert("RGB"))
-    mask = np.array(mask_pil.convert("L"))
-    mask = (mask > 0).astype(np.uint8) * 255
-    img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-    result_bgr = cv2.inpaint(img_bgr, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
-    return Image.fromarray(cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB))
+# ---------------------------------------------------------------------------
+# 🧠 IMAGE EDITOR HELPERS (PURE PYTHON)
+# ---------------------------------------------------------------------------
+def load_image(file) -> Image.Image:
+    img = Image.open(file).convert("RGB")
+    return img
+
+def pil_to_np(img: Image.Image) -> np.ndarray:
+    return np.array(img, dtype=np.uint8)
+
+def np_to_pil(arr: np.ndarray) -> Image.Image:
+    arr = np.clip(arr, 0, 255).astype(np.uint8)
+    return Image.fromarray(arr)
+
+def resize_for_speed(img: Image.Image, max_side=1024):
+    w, h = img.size
+    if max(w, h) <= max_side:
+        return img, 1.0
+    scale = max_side / max(w, h)
+    new_size = (int(w * scale), int(h * scale))
+    return img.resize(new_size, Image.LANCZOS), scale
+
+def upscale_back(img_small: Image.Image, scale: float, original_size):
+    if scale == 1.0:
+        return img_small
+    return img_small.resize(original_size, Image.LANCZOS)
+
+def canvas_mask_to_bool(mask_rgba: np.ndarray) -> np.ndarray:
+    if mask_rgba is None:
+        return None
+    alpha = mask_rgba[..., 3]
+    return alpha > 0
+
+def diffuse_inpaint(image: np.ndarray, mask: np.ndarray, iters: int = 400) -> np.ndarray:
+    """Pure NumPy diffusion-based inpainting."""
+    img = image.astype(np.float32)
+    m = mask.astype(bool)
+    if not np.any(m):
+        return image
+
+    known = ~m
+    if np.any(known):
+        img[m] = img[known].mean(axis=0)
+
+    for _ in range(iters):
+        up    = np.roll(img, -1, axis=0)
+        down  = np.roll(img,  1, axis=0)
+        left  = np.roll(img, -1, axis=1)
+        right = np.roll(img,  1, axis=1)
+        avg = (up + down + left + right) / 4.0
+        img[m] = avg[m]
+
+    return np.clip(img, 0, 255).astype(np.uint8)
 
 # ---------------------------------------------------------------------------
 # 💾 SESSION STATE
@@ -110,7 +154,6 @@ with tab1:
             st.success("✅ PDF loaded successfully.")
             st.text_area("Preview (first ~3k chars)", text[:3000], height=200)
 
-    # Display chat history
     if st.session_state.text_history:
         st.markdown("### Conversation")
     for turn in st.session_state.text_history:
@@ -133,22 +176,8 @@ with tab1:
         st.session_state.text_history.append({"role": "assistant", "text": answer})
         st.chat_message("assistant").write(answer)
 
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("🧹 Clear chat"):
-            st.session_state.text_history.clear()
-            st.rerun()
-    with c2:
-        if st.session_state.text_history:
-            st.download_button(
-                "⬇️ Download conversation",
-                data="\n\n".join(f"{t['role'].upper()}: {t['text']}" for t in st.session_state.text_history),
-                file_name="omnigen_chat.txt",
-                mime="text/plain",
-            )
-
 # ---------------------------------------------------------------------------
-# 🖼️ IMAGE Q&A / CAPTIONING MODE
+# 🖼️ IMAGE Q&A MODE
 # ---------------------------------------------------------------------------
 with tab2:
     st.header("🖼️ Image Q&A and Captioning Mode")
@@ -178,53 +207,75 @@ with tab2:
                 )
             st.success(answer)
 
-    st.caption("Note: Gemini analyzes the image but cannot modify or edit it.")
-
 # ---------------------------------------------------------------------------
-# 🛠️ IMAGE EDITOR MODE
+# 🛠️ PURE PYTHON IMAGE EDITOR MODE
 # ---------------------------------------------------------------------------
 with tab3:
-    st.header("🛠️ Image Editor Mode (Object Removal via OpenCV)")
-    st.write("Use your mouse or touchscreen to paint over unwanted objects. Inpainting runs locally without Gemini API.")
+    st.header("🛠️ Image Editor Mode (Pure Python Diffusion Inpainting)")
+    st.write("Remove objects by painting over them — runs locally with NumPy (no GPU/OpenCV).")
 
-    img_upl_edit = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"], key="img_upl_tab3")
+    uploaded = st.file_uploader("Upload an image", type=["png", "jpg", "jpeg", "webp"], key="img_upl_tab3")
+    col1, col2 = st.columns(2)
 
-    if img_upl_edit:
-        image = Image.open(io.BytesIO(_uploaded_file_to_bytes(img_upl_edit))).convert("RGB")
-        orig_w, orig_h = image.size
+    with col1:
+        iters = st.slider("Diffusion iterations (more = smoother, slower)", 100, 1500, 500, 50)
+        brush = st.slider("Brush size (px)", 5, 80, 30, 1)
+    with col2:
+        max_side = st.slider("Max working size (px)", 512, 2048, 1024, 128)
+        eraser = st.checkbox("Eraser mode", False)
+        show_mask = st.checkbox("Preview drawn mask", False)
 
-        st.write("🎨 Draw over the regions to remove below:")
-        max_canvas_w = 800
-        scale = min(max_canvas_w / orig_w, 1.0)
-        canvas_w = int(orig_w * scale)
-        canvas_h = int(orig_h * scale)
+    if uploaded:
+        img = load_image(uploaded)
+        orig_size = img.size
+        small_img, scale = resize_for_speed(img, max_side=max_side)
+        small_np = pil_to_np(small_img)
 
-        canvas = st_canvas(
-            fill_color="rgba(255,255,255,0)",
-            stroke_width=25,
-            stroke_color="#FFFFFF",
-            background_image=image.resize((canvas_w, canvas_h)),
-            height=canvas_h,
-            width=canvas_w,
-            drawing_mode="freedraw",
-            key="inpaint_canvas",
+        st.subheader("1) Paint the area to remove")
+        st.caption("Use the brush to mark unwanted areas; toggle *Eraser mode* to correct mistakes.")
+
+        canvas_res = st_canvas(
+            fill_color="rgba(255, 255, 255, 0.7)",
+            stroke_width=brush,
+            stroke_color="#ffffff",
+            background_image=small_img,
+            height=small_img.height,
+            width=small_img.width,
+            drawing_mode="freedraw" if not eraser else "transform",
+            update_streamlit=True,
+            key="mask_canvas",
         )
 
-        if st.button("🧽 Remove painted areas"):
-            if canvas.image_data is not None:
-                alpha = canvas.image_data[:, :, 3]
-                painted = (alpha > 0).astype(np.uint8) * 255
-                painted_resized = cv2.resize(painted, (orig_w, orig_h), interpolation=cv2.INTER_NEAREST)
-                mask_img = Image.fromarray(painted_resized, mode="L")
+        mask_bool = None
+        if canvas_res and canvas_res.image_data is not None:
+            mask_bool = canvas_mask_to_bool(canvas_res.image_data)
 
-                result = inpaint_with_mask(image, mask_img)
-                st.image(result, caption="Inpainted Result", use_column_width=True)
+        if show_mask and mask_bool is not None:
+            st.image((mask_bool * 255).astype(np.uint8), caption="Current mask (white=masked)", use_column_width=True)
+
+        run = st.button("🪄 Inpaint (Pure Python)")
+
+        if run:
+            if mask_bool is None or not np.any(mask_bool):
+                st.warning("Please draw a mask over the object you want to remove.")
+            else:
+                with st.spinner("Running diffusion inpainting..."):
+                    result_small = diffuse_inpaint(small_np, mask_bool, iters=iters)
+                    result_pil_small = np_to_pil(result_small)
+                    result_pil = upscale_back(result_pil_small, scale, orig_size)
+
+                st.success("Done!")
+                st.image(result_pil, caption="Inpainted result", use_column_width=True)
 
                 buf = io.BytesIO()
-                result.save(buf, format="PNG")
-                st.download_button("⬇️ Download result", buf.getvalue(), "inpainted.png", "image/png")
-            else:
-                st.warning("Please paint over the areas to remove first.")
+                result_pil.save(buf, format="PNG")
+                st.download_button(
+                    "⬇️ Download PNG",
+                    data=buf.getvalue(),
+                    file_name="inpaint_result.png",
+                    mime="image/png",
+                )
+
     else:
         st.info("Upload an image to start editing.")
 
@@ -286,6 +337,6 @@ with tab5:
 st.markdown("---")
 st.caption(
     "Notes: • Gemini analyzes text, images, and audio but does not modify them. "
-    "• The Image Editor uses local CPU inpainting for privacy and speed. "
+    "• The Image Editor uses pure NumPy diffusion for privacy and lightweight CPU operation. "
     "• Responses are refined to avoid redundant 'Part 1:' or headings."
 )
