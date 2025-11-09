@@ -12,8 +12,3 @@ google-generativeai==0.7.2
 PyPDF2==3.0.1
 Pillow==10.3.0
 numpy==1.26.4
-
-# --- Utilities ---
-protobuf==5.27.2
-requests==2.32.3
-tqdm==4.66.5
