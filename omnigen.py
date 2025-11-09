@@ -210,6 +210,9 @@ with tab2:
 # ---------------------------------------------------------------------------
 # 🛠️ PURE PYTHON IMAGE EDITOR MODE
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# 🛠️ PURE PYTHON IMAGE EDITOR MODE
+# ---------------------------------------------------------------------------
 with tab3:
     st.header("🛠️ Image Editor Mode (Pure Python Diffusion Inpainting)")
     st.write("Remove objects by painting over them — runs locally with NumPy (no GPU/OpenCV).")
@@ -231,16 +234,25 @@ with tab3:
         small_img, scale = resize_for_speed(img, max_side=max_side)
         small_np = pil_to_np(small_img)
 
+        # ✅ Ensure RGBA for proper rendering
+        if small_img.mode != "RGBA":
+            small_img = small_img.convert("RGBA")
+
+        # ✅ Convert PIL → NumPy array for streamlit-drawable-canvas
+        bg_array = np.array(small_img)
+
         st.subheader("1) Paint the area to remove")
         st.caption("Use the brush to mark unwanted areas; toggle *Eraser mode* to correct mistakes.")
 
+        # ✅ Use NumPy array background image for compatibility
+        height, width = bg_array.shape[:2]
         canvas_res = st_canvas(
             fill_color="rgba(255, 255, 255, 0.7)",
             stroke_width=brush,
             stroke_color="#ffffff",
-            background_image=small_img,
-            height=small_img.height,
-            width=small_img.width,
+            background_image=bg_array,  # ✅ FIXED
+            height=height,
+            width=width,
             drawing_mode="freedraw" if not eraser else "transform",
             update_streamlit=True,
             key="mask_canvas",
@@ -251,7 +263,11 @@ with tab3:
             mask_bool = canvas_mask_to_bool(canvas_res.image_data)
 
         if show_mask and mask_bool is not None:
-            st.image((mask_bool * 255).astype(np.uint8), caption="Current mask (white=masked)", use_column_width=True)
+            st.image(
+                (mask_bool * 255).astype(np.uint8),
+                caption="Current mask (white = masked)",
+                use_column_width=True,
+            )
 
         run = st.button("🪄 Inpaint (Pure Python)")
 
@@ -264,7 +280,7 @@ with tab3:
                     result_pil_small = np_to_pil(result_small)
                     result_pil = upscale_back(result_pil_small, scale, orig_size)
 
-                st.success("Done!")
+                st.success("✅ Done! Object removed successfully.")
                 st.image(result_pil, caption="Inpainted result", use_column_width=True)
 
                 buf = io.BytesIO()
@@ -275,9 +291,9 @@ with tab3:
                     file_name="inpaint_result.png",
                     mime="image/png",
                 )
-
     else:
         st.info("Upload an image to start editing.")
+
 
 # ---------------------------------------------------------------------------
 # 🎙️ AUDIO MODE
@@ -340,3 +356,4 @@ st.caption(
     "• The Image Editor uses pure NumPy diffusion for privacy and lightweight CPU operation. "
     "• Responses are refined to avoid redundant 'Part 1:' or headings."
 )
+
