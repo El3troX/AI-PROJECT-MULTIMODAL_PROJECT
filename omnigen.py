@@ -208,7 +208,7 @@ with tab2:
             st.success(answer)
 
 # ---------------------------------------------------------------------------
-# 🛠️ PURE PYTHON IMAGE EDITOR MODE (FIXED BACKGROUND VISIBILITY)
+# 🛠️ PURE PYTHON IMAGE EDITOR MODE (FINAL FIXED VERSION)
 # ---------------------------------------------------------------------------
 with tab3:
     st.header("🛠️ Image Editor Mode (Pure Python Diffusion Inpainting)")
@@ -226,37 +226,31 @@ with tab3:
         show_mask = st.checkbox("Preview drawn mask", False)
 
     if uploaded:
-        # Load image
+        # Load and prepare image
         img = load_image(uploaded)
         orig_size = img.size
         small_img, scale = resize_for_speed(img, max_side=max_side)
         small_np = pil_to_np(small_img)
 
-        # ✅ Convert to RGBA NumPy (uint8) for reliable display
+        # ✅ Ensure image is RGBA (important for visibility)
         small_img = small_img.convert("RGBA")
-        bg_array = np.asarray(small_img, dtype=np.uint8)
 
-        # ✅ Wrapper class to bypass ambiguous truth-value check
-        class SafeImage:
-            def __init__(self, arr):
-                self.arr = arr
-            def __bool__(self):  # prevents ValueError
-                return True
-            def __array__(self):
-                return self.arr
-        safe_bg = SafeImage(bg_array)
+        # Optional white background fill (prevents transparent backgrounds)
+        bg = Image.new("RGBA", small_img.size, (255, 255, 255, 255))
+        bg.paste(small_img, mask=small_img.split()[3])
+        small_img = bg  # Now a clean, opaque RGBA image
 
         st.subheader("1) Paint the area to remove")
         st.caption("Use the brush to mark unwanted areas; toggle *Eraser mode* to correct mistakes.")
 
-        height, width = bg_array.shape[:2]
+        # ✅ Pass PIL image directly (not NumPy array)
         canvas_res = st_canvas(
             fill_color="rgba(255,255,255,0.7)",
             stroke_width=brush,
             stroke_color="#ffffff",
-            background_image=safe_bg,  # ✅ Wrapped NumPy array
-            height=height,
-            width=width,
+            background_image=small_img,  # ✅ Must be PIL image
+            height=small_img.height,
+            width=small_img.width,
             drawing_mode="freedraw" if not eraser else "transform",
             update_streamlit=True,
             key="mask_canvas",
@@ -267,9 +261,11 @@ with tab3:
             mask_bool = canvas_mask_to_bool(canvas_res.image_data)
 
         if show_mask and mask_bool is not None:
-            st.image((mask_bool * 255).astype(np.uint8),
-                     caption="Current mask (white = masked)",
-                     use_column_width=True)
+            st.image(
+                (mask_bool * 255).astype(np.uint8),
+                caption="Current mask (white = masked)",
+                use_column_width=True,
+            )
 
         run = st.button("🪄 Inpaint (Pure Python)")
         if run:
@@ -292,9 +288,9 @@ with tab3:
                     file_name="inpaint_result.png",
                     mime="image/png",
                 )
+
     else:
         st.info("Upload an image to start editing.")
-
 
 # ---------------------------------------------------------------------------
 # 🎙️ AUDIO MODE
@@ -357,6 +353,7 @@ st.caption(
     "• The Image Editor uses pure NumPy diffusion for privacy and lightweight CPU operation. "
     "• Responses are refined to avoid redundant 'Part 1:' or headings."
 )
+
 
 
 
