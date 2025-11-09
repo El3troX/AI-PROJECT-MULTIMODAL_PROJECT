@@ -208,18 +208,15 @@ with tab2:
             st.success(answer)
 
 # ---------------------------------------------------------------------------
-# 🛠️ PURE PYTHON IMAGE EDITOR MODE
-# ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
-# 🛠️ PURE PYTHON IMAGE EDITOR MODE
+# 🛠️ PURE PYTHON IMAGE EDITOR MODE (FIXED BACKGROUND VISIBILITY)
 # ---------------------------------------------------------------------------
 with tab3:
     st.header("🛠️ Image Editor Mode (Pure Python Diffusion Inpainting)")
     st.write("Remove objects by painting over them — runs locally with NumPy (no GPU/OpenCV).")
 
     uploaded = st.file_uploader("Upload an image", type=["png", "jpg", "jpeg", "webp"], key="img_upl_tab3")
-    col1, col2 = st.columns(2)
 
+    col1, col2 = st.columns(2)
     with col1:
         iters = st.slider("Diffusion iterations (more = smoother, slower)", 100, 1500, 500, 50)
         brush = st.slider("Brush size (px)", 5, 80, 30, 1)
@@ -229,48 +226,52 @@ with tab3:
         show_mask = st.checkbox("Preview drawn mask", False)
 
     if uploaded:
-        # Load and prepare image
+        # Load image
         img = load_image(uploaded)
         orig_size = img.size
         small_img, scale = resize_for_speed(img, max_side=max_side)
         small_np = pil_to_np(small_img)
 
-        # ✅ Ensure RGBA for proper canvas rendering
-        if small_img.mode != "RGBA":
-            small_img = small_img.convert("RGBA")
+        # ✅ Convert to RGBA NumPy (uint8) for reliable display
+        small_img = small_img.convert("RGBA")
+        bg_array = np.asarray(small_img, dtype=np.uint8)
+
+        # ✅ Wrapper class to bypass ambiguous truth-value check
+        class SafeImage:
+            def __init__(self, arr):
+                self.arr = arr
+            def __bool__(self):  # prevents ValueError
+                return True
+            def __array__(self):
+                return self.arr
+        safe_bg = SafeImage(bg_array)
 
         st.subheader("1) Paint the area to remove")
         st.caption("Use the brush to mark unwanted areas; toggle *Eraser mode* to correct mistakes.")
 
-        # ✅ Pass PIL image (not NumPy array) to avoid ValueError
+        height, width = bg_array.shape[:2]
         canvas_res = st_canvas(
-            fill_color="rgba(255, 255, 255, 0.7)",
+            fill_color="rgba(255,255,255,0.7)",
             stroke_width=brush,
             stroke_color="#ffffff",
-            background_image=small_img,  # ✅ FIXED: pass PIL image
-            height=small_img.height,
-            width=small_img.width,
+            background_image=safe_bg,  # ✅ Wrapped NumPy array
+            height=height,
+            width=width,
             drawing_mode="freedraw" if not eraser else "transform",
             update_streamlit=True,
             key="mask_canvas",
         )
 
-        # Extract mask
         mask_bool = None
         if canvas_res and canvas_res.image_data is not None:
             mask_bool = canvas_mask_to_bool(canvas_res.image_data)
 
-        # Show preview
         if show_mask and mask_bool is not None:
-            st.image(
-                (mask_bool * 255).astype(np.uint8),
-                caption="Current mask (white = masked)",
-                use_column_width=True,
-            )
+            st.image((mask_bool * 255).astype(np.uint8),
+                     caption="Current mask (white = masked)",
+                     use_column_width=True)
 
-        # Inpainting logic
         run = st.button("🪄 Inpaint (Pure Python)")
-
         if run:
             if mask_bool is None or not np.any(mask_bool):
                 st.warning("Please draw a mask over the object you want to remove.")
@@ -291,10 +292,8 @@ with tab3:
                     file_name="inpaint_result.png",
                     mime="image/png",
                 )
-
     else:
         st.info("Upload an image to start editing.")
-
 
 
 # ---------------------------------------------------------------------------
@@ -358,5 +357,6 @@ st.caption(
     "• The Image Editor uses pure NumPy diffusion for privacy and lightweight CPU operation. "
     "• Responses are refined to avoid redundant 'Part 1:' or headings."
 )
+
 
 
