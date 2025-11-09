@@ -229,39 +229,38 @@ with tab3:
         show_mask = st.checkbox("Preview drawn mask", False)
 
     if uploaded:
+        # Load and prepare image
         img = load_image(uploaded)
         orig_size = img.size
         small_img, scale = resize_for_speed(img, max_side=max_side)
         small_np = pil_to_np(small_img)
 
-        # ✅ Ensure RGBA for proper rendering
+        # ✅ Ensure RGBA for proper canvas rendering
         if small_img.mode != "RGBA":
             small_img = small_img.convert("RGBA")
-
-        # ✅ Convert PIL → NumPy array for streamlit-drawable-canvas
-        bg_array = np.array(small_img)
 
         st.subheader("1) Paint the area to remove")
         st.caption("Use the brush to mark unwanted areas; toggle *Eraser mode* to correct mistakes.")
 
-        # ✅ Use NumPy array background image for compatibility
-        height, width = bg_array.shape[:2]
+        # ✅ Pass PIL image (not NumPy array) to avoid ValueError
         canvas_res = st_canvas(
             fill_color="rgba(255, 255, 255, 0.7)",
             stroke_width=brush,
             stroke_color="#ffffff",
-            background_image=bg_array,  # ✅ FIXED
-            height=height,
-            width=width,
+            background_image=small_img,  # ✅ FIXED: pass PIL image
+            height=small_img.height,
+            width=small_img.width,
             drawing_mode="freedraw" if not eraser else "transform",
             update_streamlit=True,
             key="mask_canvas",
         )
 
+        # Extract mask
         mask_bool = None
         if canvas_res and canvas_res.image_data is not None:
             mask_bool = canvas_mask_to_bool(canvas_res.image_data)
 
+        # Show preview
         if show_mask and mask_bool is not None:
             st.image(
                 (mask_bool * 255).astype(np.uint8),
@@ -269,6 +268,7 @@ with tab3:
                 use_column_width=True,
             )
 
+        # Inpainting logic
         run = st.button("🪄 Inpaint (Pure Python)")
 
         if run:
@@ -291,8 +291,10 @@ with tab3:
                     file_name="inpaint_result.png",
                     mime="image/png",
                 )
+
     else:
         st.info("Upload an image to start editing.")
+
 
 
 # ---------------------------------------------------------------------------
@@ -356,4 +358,5 @@ st.caption(
     "• The Image Editor uses pure NumPy diffusion for privacy and lightweight CPU operation. "
     "• Responses are refined to avoid redundant 'Part 1:' or headings."
 )
+
 
